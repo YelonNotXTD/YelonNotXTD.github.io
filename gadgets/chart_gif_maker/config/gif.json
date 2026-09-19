@@ -5,7 +5,7 @@
   "fps": 12,
   "maxWidth": 325,
   "maxHeight": 325,
-  "maxDurationSeconds": 3.25,
+  "maxDurationSeconds": 32.5,
   "maxFileSizeMB": 512,
   "minCropSize": 8,
 
