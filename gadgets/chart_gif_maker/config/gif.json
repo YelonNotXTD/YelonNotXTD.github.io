@@ -1,0 +1,16 @@
+{
+  "_说明": "本文件是唯一需要调整的地方。它是纯静态站点上的普通文件，会被浏览器下载后读取；修改后刷新页面即生效，无需重新构建。",
+  "_限制说明": "上限只是给不熟悉参数的用户兜底，超出时会自动等比缩小 / 截断时长，并在界面上说明调整内容。",
+
+  "fps": 12,
+  "maxWidth": 325,
+  "maxHeight": 325,
+  "maxDurationSeconds": 3.25,
+  "maxFileSizeMB": 512,
+  "minCropSize": 8,
+
+  "_编码说明": "maxColors 为每帧最多颜色数（≤256）；optimizeTransparency 会在画面变化不大时只编码发生变化的像素；transparencyThreshold 是判定阈值（变化像素占比低于该值就启用）。",
+  "maxColors": 256,
+  "optimizeTransparency": true,
+  "transparencyThreshold": 0.8
+}

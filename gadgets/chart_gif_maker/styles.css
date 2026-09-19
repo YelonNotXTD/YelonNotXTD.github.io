@@ -1,0 +1,217 @@
+:root {
+  --bg: #f5f6f8;
+  --fg: #1d2129;
+  --muted: #6b7280;
+  --line: #dfe3e8;
+  --accent: #2563eb;
+  --warn: #b45309;
+  --err: #b91c1c;
+  --ok: #15803d;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 24px 20px 48px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.55 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+.topbar { margin: 0 auto 18px; max-width: 1180px; }
+.topbar h1 { margin: 0; font-size: 20px; }
+.topbar .sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.topbar .sub strong { color: var(--ok); font-weight: 600; }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  max-width: 1180px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.result { max-width: 1180px; margin: 16px auto 0; }
+.result h2 { margin: 0 0 10px; font-size: 14px; }
+.result img {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, #eef1f4 25%, transparent 25%, transparent 75%, #eef1f4 75%) 0 0/16px 16px,
+    linear-gradient(45deg, #eef1f4 25%, transparent 25%, transparent 75%, #eef1f4 75%) 8px 8px/16px 16px;
+}
+.result p { margin: 10px 0 0; color: var(--muted); }
+.result .notes { color: var(--warn); }
+.result .link {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+}
+.result .link:hover { background: #1d4ed8; }
+
+/* 上传区 */
+.dropzone {
+  border: 1.5px dashed #c6ccd4;
+  border-radius: 10px;
+  padding: 40px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone:focus-visible, .dropzone.over {
+  border-color: var(--accent);
+  background: #f0f5ff;
+  outline: none;
+}
+.dz-inner { display: grid; gap: 4px; }
+.dz-inner span { color: var(--muted); font-size: 13px; }
+.dz-hint:empty { display: none; }
+
+/* 预览区 */
+.viewer { display: grid; gap: 10px; }
+.stage { display: grid; gap: 12px; }
+
+.frame {
+  position: relative;
+  margin: 0 auto;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  line-height: 0;
+}
+.frame video { display: block; width: 100%; height: 100%; }
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+  background: rgba(0, 0, 0, .28);
+}
+.rect {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45);
+  border: 1.5px solid #fff;
+  outline: 1px solid rgba(0, 0, 0, .5);
+  cursor: move;
+  box-sizing: border-box;
+}
+.handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border: 1.5px solid #111827;
+  border-radius: 2px;
+}
+.handle[data-corner="nw"] { left: -7px; top: -7px; cursor: nwse-resize; }
+.handle[data-corner="ne"] { right: -7px; top: -7px; cursor: nesw-resize; }
+.handle[data-corner="sw"] { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.handle[data-corner="se"] { right: -7px; bottom: -7px; cursor: nwse-resize; }
+
+/* 播放控制 */
+.transport { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; }
+.transport input[type="range"] { width: 100%; }
+
+.meta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; color: var(--muted); }
+
+/* 表单 */
+.controls { display: grid; gap: 14px; }
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+legend { padding: 0 6px; font-weight: 600; font-size: 13px; }
+.tip { margin: 0; color: var(--muted); font-size: 12px; }
+
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.grid4 label, .inline { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.grid4 input, .timerow input, .inline input { min-width: 0; }
+
+.timerow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.timerow .tag { color: var(--muted); font-size: 12px; }
+.timerow input { width: 68px; }
+
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inline { display: flex; align-items: center; gap: 6px; color: var(--fg); }
+.inline input { width: 84px; }
+
+input[type="number"], select {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+  color: inherit;
+}
+input[type="number"]:focus, select:focus { outline: 2px solid #bfd4ff; border-color: var(--accent); }
+
+button {
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: #1d4ed8; }
+button.ghost { background: #fff; border-color: var(--line); color: var(--fg); }
+button.ghost:hover:not(:disabled) { background: #f2f4f7; }
+button.mini { padding: 4px 9px; font-size: 12px; }
+button.icon { padding: 4px 0; width: 34px; background: #fff; border-color: var(--line); }
+
+.check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+
+.plan { margin: 0; color: var(--fg); }
+.status { margin: 0; min-height: 18px; font-size: 13px; color: var(--muted); }
+.status.error { color: var(--err); }
+.status.warn { color: var(--warn); }
+.status.ok { color: var(--ok); }
+.status.busy { color: var(--accent); }
+
+.progress { display: grid; gap: 5px; }
+.progress .bar {
+  height: 6px;
+  border-radius: 999px;
+  background: #e8ebef;
+  overflow: hidden;
+}
+.progress .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width .12s linear;
+}
+.progress span { color: var(--muted); }

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>视频区间 → GIF</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>视频区间 → GIF</h1>
+    <p class="sub">
+      上传视频，框选画面区域、指定起止时间，导出循环 GIF。
+      <strong>全部在本机浏览器完成，视频不会上传到任何服务器。</strong>
+    </p>
+  </header>
+
+  <main class="layout">
+    <section class="panel stage">
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="选择或拖入视频文件">
+        <div class="dz-inner">
+          <strong>拖入视频文件</strong>
+          <span>或点击此处选择文件</span>
+          <span class="dz-hint" id="dzHint"></span>
+        </div>
+        <input type="file" id="fileInput" accept="video/*" hidden>
+      </div>
+
+      <div class="viewer" id="viewer" hidden>
+        <div class="frame" id="frame">
+          <video id="video" playsinline muted preload="auto"></video>
+          <div class="overlay" id="overlay" title="拖拽框选区域">
+            <div class="rect" id="rect">
+              <span class="handle" data-corner="nw"></span>
+              <span class="handle" data-corner="ne"></span>
+              <span class="handle" data-corner="sw"></span>
+              <span class="handle" data-corner="se"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="transport">
+          <button type="button" id="playBtn" class="icon" title="播放 / 暂停">▶</button>
+          <input type="range" id="scrub" min="0" max="0" step="0.01" value="0" aria-label="播放进度">
+          <span class="mono" id="timeLabel">0.00 / 0.00 s</span>
+        </div>
+
+        <div class="meta">
+          <span id="metaInfo" class="mono"></span>
+          <span id="cropInfo" class="mono"></span>
+          <button type="button" id="changeFileBtn" class="ghost mini">更换视频</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel controls">
+      <fieldset>
+        <legend>1. 裁剪区域</legend>
+        <p class="tip">在画面上拖拽框选，或直接输入像素坐标（左上角 X1,Y1 / 右下角 X2,Y2）。</p>
+        <div class="grid4">
+          <label>X1<input type="number" id="x1" step="1" min="0" inputmode="numeric"></label>
+          <label>Y1<input type="number" id="y1" step="1" min="0" inputmode="numeric"></label>
+          <label>X2<input type="number" id="x2" step="1" min="0" inputmode="numeric"></label>
+          <label>Y2<input type="number" id="y2" step="1" min="0" inputmode="numeric"></label>
+        </div>
+        <div class="row">
+          <button type="button" id="selectAllBtn" class="ghost">全选画面</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>2. 时间区间</legend>
+        <div class="timerow">
+          <span class="tag">起始</span>
+          <input type="number" id="startMin" min="0" step="1" inputmode="numeric"> 分
+          <input type="number" id="startSec" min="0" max="59" step="0.01" inputmode="decimal"> 秒
+          <button type="button" class="ghost mini" id="startNowBtn">取当前</button>
+        </div>
+        <div class="timerow">
+          <span class="tag">结束</span>
+          <input type="number" id="endMin" min="0" step="1" inputmode="numeric"> 分
+          <input type="number" id="endSec" min="0" max="59" step="0.01" inputmode="decimal"> 秒
+          <button type="button" class="ghost mini" id="endNowBtn">取当前</button>
+        </div>
+        <label class="check"><input type="checkbox" id="loopSel"> 循环预览该区间</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>3. 输出</legend>
+        <div class="row">
+          <label class="inline">目标
+            <select id="mode">
+              <option value="width">宽度</option>
+              <option value="height">高度</option>
+            </select>
+          </label>
+          <label class="inline"><input type="number" id="size" min="1" step="1" inputmode="numeric"> px</label>
+        </div>
+        <p class="plan mono" id="planInfo"></p>
+        <p class="tip" id="limitInfo"></p>
+        <div class="row">
+          <button type="button" id="renderBtn" class="primary" disabled>生成 GIF</button>
+          <button type="button" id="cancelBtn" class="ghost" hidden>取消</button>
+        </div>
+        <div class="progress" id="progress" hidden>
+          <div class="bar"><i id="progressBar"></i></div>
+          <span class="mono" id="progressText"></span>
+        </div>
+        <p class="status" id="status"></p>
+      </fieldset>
+    </section>
+  </main>
+
+  <section class="panel result" id="resultPanel" hidden>
+    <h2>结果</h2>
+    <img id="resultImg" alt="生成的 GIF">
+    <p class="mono" id="resultInfo"></p>
+    <p class="notes" id="resultNotes"></p>
+    <a id="downloadLink" class="primary link" download="clip.gif">下载 GIF</a>
+  </section>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
