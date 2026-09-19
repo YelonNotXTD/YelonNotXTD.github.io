@@ -9,6 +9,8 @@
 import { GIFEncoder, quantize, applyPalette } from './vendor/gifenc.esm.js';
 
 const CONFIG_URL = './config/gif.json';
+/** 「保存配置」写入浏览器本地的键名（只存与具体视频无关的输出偏好） */
+const STORAGE_KEY = 'chart_gif_maker.prefs.v1';
 
 /** config/gif.json 读不到时使用的兜底值（与仓库里的默认配置一致） */
 const DEFAULTS = {
@@ -35,8 +37,9 @@ const el = {
   x1: $('x1'), y1: $('y1'), x2: $('x2'), y2: $('y2'), selectAllBtn: $('selectAllBtn'),
   startMin: $('startMin'), startSec: $('startSec'), endMin: $('endMin'), endSec: $('endSec'),
   startNowBtn: $('startNowBtn'), endNowBtn: $('endNowBtn'), loopSel: $('loopSel'),
-  mode: $('mode'), size: $('size'), planInfo: $('planInfo'), limitInfo: $('limitInfo'),
-  renderBtn: $('renderBtn'), cancelBtn: $('cancelBtn'), status: $('status'),
+  mode: $('mode'), size: $('size'), fps: $('fps'), fpsHint: $('fpsHint'),
+  planInfo: $('planInfo'), limitInfo: $('limitInfo'),
+  renderBtn: $('renderBtn'), saveConfigBtn: $('saveConfigBtn'), cancelBtn: $('cancelBtn'), status: $('status'),
   progress: $('progress'), progressBar: $('progressBar'), progressText: $('progressText'),
   resultPanel: $('resultPanel'), resultImg: $('resultImg'), resultInfo: $('resultInfo'),
   resultNotes: $('resultNotes'), downloadLink: $('downloadLink'),
@@ -45,6 +48,12 @@ const el = {
 const state = {
   config: { ...DEFAULTS },
   configLoaded: false,
+  /** 用户手动设置的帧率（整数，1 ~ config.fps） */
+  fps: DEFAULTS.fps,
+  /** 输出偏好，可从 localStorage 恢复 / 由「保存配置」写入 */
+  prefs: null,
+  /** 用户本次是否手动改过这些输出参数（改过之后载入新视频不再覆盖） */
+  userEdited: { mode: false, size: false, fps: false },
   file: null,
   videoUrl: null,
   videoWidth: 0,
@@ -53,6 +62,14 @@ const state = {
   sel: { x: 0, y: 0, w: 0, h: 0 },
   start: 0,
   end: 0,
+  /** 时间输入框里"最后一次有效"的四个数值（分量 / 秒分开存，输入到一半时不会被清成 0） */
+  time: { startMin: 0, startSec: 0, endMin: 0, endSec: 0 },
+  /** 正在输入中的草稿值（只有提交时才写回 state.time） */
+  timeDraft: { startMin: 0, startSec: 0, endMin: 0, endSec: 0 },
+  /** 时间输入被自动修正的说明，用于界面提示与控制台输出 */
+  timeNotices: [],
+  /** 帧率输入被自动修正的说明 */
+  fpsNotices: [],
   mode: 'width',
   size: 325,
   busy: false,
@@ -65,6 +82,35 @@ const state = {
 const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 const f2 = (v) => (Math.round(v * 100) / 100).toFixed(2);
 const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * 规范化用户敲进输入框的数字文本：全角数字、全角小数点、逗号都当作普通数字处理。
+ * 直接用 <input type="number"> 时，浏览器会把 "1,5" 这类内容悄悄清成空串，
+ * JS 再读就变成了 0，于是"时间区间设置无效"。这里改成自己解析文本，避免这种静默丢失。
+ */
+function normalizeNumberText(text) {
+  return String(text ?? '')
+    .replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[\uFF0E\uFF0C，、,]/g, '.')
+    .trim();
+}
+
+/** 解析输入框数字；空、非法、负数一律返回 null（调用方沿用上一个有效值） */
+function parseNumberText(text) {
+  const raw = normalizeNumberText(text);
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+/** config 里的 fps 既是默认值，也是用户能设置的上限 */
+const fpsCap = () => Math.max(1, Math.floor(state.config.fps));
+const clampFps = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fpsCap();
+  return Math.min(Math.max(1, Math.floor(n)), fpsCap());
+};
 
 class Cancelled extends Error {}
 
@@ -94,11 +140,13 @@ async function loadConfig() {
   }
   el.limitInfo.textContent = state.configLoaded
     ? `上限（可在 config/gif.json 调整）：${state.config.maxWidth}×${state.config.maxHeight}px、`
-      + `${state.config.maxDurationSeconds}s、${state.config.fps}fps；超出时自动等比缩小 / 截断时长。`
+      + `${state.config.maxDurationSeconds}s、${fpsCap()}fps；超出时自动等比缩小 / 截断时长。`
     : `未能读取 config/gif.json，本次使用内置默认值：${DEFAULTS.maxWidth}×${DEFAULTS.maxHeight}px、`
-      + `${DEFAULTS.maxDurationSeconds}s、${DEFAULTS.fps}fps。`;
+      + `${DEFAULTS.maxDurationSeconds}s、${fpsCap()}fps。`;
   if (!state.configLoaded) setStatus('未能读取 config/gif.json（用 file:// 直接打开会这样，请通过网站地址访问）', 'warn');
   el.dzHint.textContent = `单个文件不超过 ${state.config.maxFileSizeMB}MB`;
+  state.fps = fpsCap();
+  syncFpsInput();
 }
 
 /* ---------- 文件与预览 ---------- */
@@ -170,12 +218,18 @@ function onMetadata() {
   resizeFrame();
 
   // 默认：整幅画面 + 视频开头 + 上限内的目标宽度
+  //（帧率 / 尺寸 / 目标若保存过就沿用保存值；用户已经手动改过的则保留用户的设置）
   state.sel = { x: 0, y: 0, w: state.videoWidth, h: state.videoHeight };
   state.start = 0;
   state.end = Math.min(state.duration, cfg.maxDurationSeconds);
-  state.size = Math.max(1, Math.min(Math.round(cfg.maxWidth), state.videoWidth));
+  if (!state.userEdited.mode) state.mode = state.prefs?.mode ?? state.mode;
+  if (!state.userEdited.size) {
+    state.size = state.prefs?.size ?? Math.max(1, Math.min(Math.round(cfg.maxWidth), state.videoWidth));
+  }
+  if (!state.userEdited.fps) state.fps = clampFps(state.prefs?.fps ?? cfg.fps);
   el.size.value = String(state.size);
   el.mode.value = state.mode;
+  syncFpsInput();
 
   syncCropInputs();
   syncTimeInputs();
@@ -353,6 +407,16 @@ function syncTimeInputs() {
   el.startSec.value = start.seconds.toFixed(2);
   el.endMin.value = String(end.minutes);
   el.endSec.value = end.seconds.toFixed(2);
+  state.time = {
+    startMin: start.minutes,
+    startSec: Number(start.seconds.toFixed(2)),
+    endMin: end.minutes,
+    endSec: Number(end.seconds.toFixed(2)),
+  };
+  state.timeDraft = { ...state.time };
+  for (const input of [el.startMin, el.startSec, el.endMin, el.endSec]) {
+    input.setAttribute('aria-invalid', 'false');
+  }
 }
 
 function splitTime(seconds) {
@@ -361,23 +425,90 @@ function splitTime(seconds) {
   return { minutes, seconds: total - minutes * 60 };
 }
 
-function readTimeInputs() {
-  const start = Number(el.startMin.value) * 60 + Number(el.startSec.value);
-  const end = Number(el.endMin.value) * 60 + Number(el.endSec.value);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return;
-  state.start = clamp(start, 0, Math.max(0, state.duration - MIN_DURATION));
-  state.end = clamp(end, 0, state.duration);
-  if (state.end <= state.start) state.end = Math.min(state.duration, state.start + MIN_DURATION);
-  syncTimeInputs();
+/**
+ * 读取时间区间。
+ *
+ * 这里刻意不直接 Number(input.value)：输入框为空、或者写了「1,5」这种内容时，
+ * 旧写法会把它当成 0，用户设好的区间就被悄悄清空了（表现就是「时间区间设置无效 / 总是导出最长时间」）。
+ * 现在这类输入会沿用该字段上一次的有效值，并把「做了什么修正」记下来，供界面和控制台查看。
+ */
+function readTimeInputs({ canonicalize = true } = {}) {
+  const notices = [];
+  const read = (input, key, label) => {
+    const value = parseNumberText(input.value);
+    if (value !== null) {
+      state.timeDraft[key] = value;
+      input.setAttribute('aria-invalid', 'false');
+      return value;
+    }
+    const raw = normalizeNumberText(input.value);
+    input.setAttribute('aria-invalid', raw ? 'true' : 'false');
+    if (canonicalize) {
+      // 提交时才提示：输入框空着 / 不是数字时，沿用上一次的有效值（而不是悄悄变成 0）
+      notices.push(`「${label}」${raw ? '不是有效数字' : '为空'}，沿用上一个有效值 ${f2(state.time[key])}`);
+    } else {
+      state.timeDraft[key] = state.time[key];
+    }
+    return state.time[key];
+  };
+
+  const startMin = read(el.startMin, 'startMin', '起始 分');
+  const startSec = read(el.startSec, 'startSec', '起始 秒');
+  const endMin = read(el.endMin, 'endMin', '结束 分');
+  const endSec = read(el.endSec, 'endSec', '结束 秒');
+
+  const askedStart = startMin * 60 + startSec;
+  const askedEnd = endMin * 60 + endSec;
+  state.start = clamp(askedStart, 0, Math.max(0, state.duration - MIN_DURATION));
+  state.end = clamp(askedEnd, 0, state.duration);
+  if (askedStart > state.start + 0.001) {
+    notices.push(`起始时间 ${f2(askedStart)}s 超出可用范围，已收敛到 ${f2(state.start)}s`);
+  }
+  if (askedEnd > state.end + 0.001) {
+    notices.push(`结束时间 ${f2(askedEnd)}s 超过视频长度，已收敛到 ${f2(state.end)}s`);
+  }
+  if (state.end <= state.start) {
+    state.end = Math.min(state.duration, state.start + MIN_DURATION);
+    notices.push(`结束时间不晚于起始时间，已改为 ${f2(state.end)}s（起始 + ${MIN_DURATION}s）`);
+  }
+
+  state.timeNotices = notices;
+  if (canonicalize) syncTimeInputs();
   updatePlanPreview();
 }
 
+/**
+ * 文本输入框的通用绑定：
+ * 打字时实时更新状态（live），失焦 / 回车提交一次（commit）。
+ * 浏览器在失焦时会先派发 change 再派发 blur，所以这里用一个"脏标记"保证只提交一次——
+ * 否则第二次读取会把第一次的「自动修正」提示冲掉。
+ */
+function bindTextField(input, { live, commit }) {
+  const submit = () => {
+    if (input.dataset.dirty !== '1') return;
+    delete input.dataset.dirty;
+    commit();
+  };
+  input.addEventListener('input', () => {
+    input.dataset.dirty = '1';
+    live();
+  });
+  input.addEventListener('change', submit);
+  input.addEventListener('blur', submit);
+}
+
+/** 合并多份「自动修正」说明并去重 */
+const mergeNotices = (...lists) => [...new Set(lists.flat().filter(Boolean))];
+
 function bindTime() {
   for (const input of [el.startMin, el.startSec, el.endMin, el.endSec]) {
-    input.addEventListener('change', readTimeInputs);
-    input.addEventListener('blur', readTimeInputs);
+    bindTextField(input, {
+      live: () => readTimeInputs({ canonicalize: false }),
+      commit: () => readTimeInputs(),
+    });
   }
   el.startNowBtn.addEventListener('click', () => {
+    readTimeInputs({ canonicalize: false });
     state.start = clamp(el.video.currentTime, 0, Math.max(0, state.duration - MIN_DURATION));
     if (state.end <= state.start) {
       state.end = Math.min(state.duration, state.start + state.config.maxDurationSeconds);
@@ -386,6 +517,7 @@ function bindTime() {
     updatePlanPreview();
   });
   el.endNowBtn.addEventListener('click', () => {
+    readTimeInputs({ canonicalize: false });
     state.end = clamp(el.video.currentTime, 0, state.duration);
     if (state.end <= state.start) state.start = Math.max(0, state.end - MIN_DURATION);
     syncTimeInputs();
@@ -463,17 +595,19 @@ function computeOutput() {
 
   const requestedDuration = Math.max(0, state.end - state.start);
   const allowedDuration = Math.min(requestedDuration, cfg.maxDurationSeconds);
-  const frames = Math.max(1, Math.round(allowedDuration * cfg.fps));
-  const duration = Math.round((frames / cfg.fps) * 1000) / 1000;
+  const fps = clampFps(state.fps);
+  const frames = Math.max(1, Math.round(allowedDuration * fps));
+  const duration = Math.round((frames / fps) * 1000) / 1000;
 
   return {
     width,
     height,
     frames,
     duration,
-    fps: cfg.fps,
+    fps,
     start: Math.round(clamp(state.start, 0, Math.max(0, state.duration - MIN_DURATION)) * 1000) / 1000,
     crop: { x: state.sel.x, y: state.sel.y, w: state.sel.w, h: state.sel.h },
+    requestedDuration,
     sizeClamped,
     durationClamped: requestedDuration - allowedDuration > 0.001,
     tooShort: requestedDuration < MIN_DURATION,
@@ -485,31 +619,186 @@ function updatePlanPreview() {
   const canRender = Boolean(state.file && out && !out.tooShort);
   el.renderBtn.disabled = !canRender || state.busy;
 
+  const notes = [...state.timeNotices, ...state.fpsNotices];
   if (!out) {
-    el.planInfo.textContent = '';
+    el.planInfo.textContent = notes.length ? `输入提示：${notes.join('；')}` : '';
     return;
   }
   if (out.tooShort) {
-    el.planInfo.textContent = `时间区间过短（至少约 ${MIN_DURATION}s）`;
+    el.planInfo.textContent = `时间区间过短（至少约 ${MIN_DURATION}s）`
+      + (notes.length ? `\n输入提示：${notes.join('；')}` : '');
     return;
   }
   const marks = [];
   if (out.sizeClamped) marks.push('尺寸已按上限缩小');
-  if (out.durationClamped) marks.push('时长已按上限截断');
+  if (out.durationClamped) {
+    marks.push(`时长已按上限截断：所选 ${f2(out.requestedDuration)}s → 实际 ${f2(out.duration)}s`
+      + `（上限 ${state.config.maxDurationSeconds}s 来自 config/gif.json）`);
+  }
   el.planInfo.textContent =
     `实际输出 ${out.width}×${out.height}px · ${out.frames} 帧 · ${out.fps}fps · ${f2(out.duration)}s`
-    + (marks.length ? `（${marks.join('、')}）` : '');
+    + (marks.length ? `（${marks.join('、')}）` : '')
+    + (notes.length ? `\n输入提示：${notes.join('；')}` : '');
 }
 
 function bindOutput() {
-  el.mode.addEventListener('change', () => { state.mode = el.mode.value; updatePlanPreview(); });
-  el.size.addEventListener('input', () => {
-    const value = Number(el.size.value);
-    if (Number.isFinite(value) && value >= 1) {
-      state.size = value;
-      updatePlanPreview();
-    }
+  el.mode.addEventListener('change', () => {
+    state.mode = el.mode.value;
+    state.userEdited.mode = true;
+    updatePlanPreview();
   });
+  bindTextField(el.size, {
+    live: () => { state.userEdited.size = true; readSizeInput({ canonicalize: false }); },
+    commit: () => readSizeInput(),
+  });
+  bindTextField(el.fps, {
+    live: () => { state.userEdited.fps = true; readFpsInput({ canonicalize: false }); },
+    commit: () => readFpsInput(),
+  });
+}
+
+/** 目标像素：只要 1 以上的数字，别的输入沿用上一个有效值 */
+function readSizeInput({ canonicalize = true } = {}) {
+  const value = parseNumberText(el.size.value);
+  if (value !== null && value >= 1) state.size = Math.max(1, Math.round(value));
+  if (canonicalize) el.size.value = String(state.size);
+  updatePlanPreview();
+}
+
+/**
+ * 帧率输入：只接受整数，不低于 1，高于 config 里的上限时取上限。
+ * 上限值本身来自 config/gif.json，改配置刷新页面即可生效。
+ */
+function readFpsInput({ canonicalize = true } = {}) {
+  const cap = fpsCap();
+  const asked = parseNumberText(el.fps.value);
+  const notices = [];
+  let fps = state.fps;
+
+  if (asked === null) {
+    notices.push(`帧率输入无效，沿用上一个有效值 ${state.fps}fps`);
+  } else {
+    const integer = Math.floor(asked);
+    fps = integer;
+    if (asked > integer + 0.0001) notices.push(`帧率只接受整数，${asked} 已取整为 ${integer}fps`);
+    if (fps < 1) {
+      fps = 1;
+      notices.push('帧率不能低于 1fps，已设为 1fps');
+    }
+    if (fps > cap) {
+      fps = cap;
+      notices.push(`帧率 ${integer} 超过上限 ${cap}fps，已取上限`);
+    }
+  }
+
+  state.fps = fps;
+  state.fpsNotices = canonicalize ? notices : [];
+  if (canonicalize) el.fps.value = String(fps);
+  updatePlanPreview();
+}
+
+/** 把 config 上限、界面读到的值和最终输出整理成一份可复制的对象，供控制台 / 排查问题用 */
+function configSnapshot() {
+  const out = computeOutput();
+  const num = (input) => (input.value.trim() === '' ? null : normalizeNumberText(input.value));
+  return {
+    配置文件: state.configLoaded ? CONFIG_URL : `未能读取 ${CONFIG_URL}，本次使用内置默认值`,
+    config上限: { ...state.config },
+    视频: state.file
+      ? {
+        名称: state.file.name,
+        大小MB: Number((state.file.size / 1048576).toFixed(2)),
+        分辨率: `${state.videoWidth}×${state.videoHeight}`,
+        时长秒: Number(state.duration.toFixed(3)),
+      }
+      : null,
+    界面读到的时间区间: {
+      '起始 分': num(el.startMin),
+      '起始 秒': num(el.startSec),
+      '结束 分': num(el.endMin),
+      '结束 秒': num(el.endSec),
+      换算: { start: state.start, end: state.end, duration: Math.max(0, state.end - state.start) },
+    },
+    界面读到的裁剪区域: { ...state.sel, x2: Math.round(state.sel.x + state.sel.w), y2: Math.round(state.sel.y + state.sel.h) },
+    界面读到的输出参数: {
+      目标: state.mode,
+      像素: state.size,
+      帧率: state.fps,
+      帧率上限: fpsCap(),
+    },
+    实际输出: out
+      ? {
+        宽: out.width,
+        高: out.height,
+        帧数: out.frames,
+        帧率: out.fps,
+        时长秒: out.duration,
+        起始秒: out.start,
+        尺寸按上限缩小: out.sizeClamped,
+        时长按上限截断: out.durationClamped,
+      }
+      : null,
+    自动修正: [...state.timeNotices, ...state.fpsNotices],
+  };
+}
+
+/** 保存配置：写入浏览器本地存储 + 弹窗提示 + 把读取到的配置输出到控制台 */
+function saveConfig() {
+  // 先记下当前已有的"自动修正"提示，再重新读一遍输入框（重新读会刷新提示）
+  const before = mergeNotices(state.timeNotices, state.fpsNotices);
+  readCropInputs();
+  readTimeInputs();
+  readSizeInput();
+  readFpsInput();
+
+  const snapshot = configSnapshot();
+  snapshot.自动修正 = mergeNotices(before, state.timeNotices, state.fpsNotices);
+  const saved = { fps: snapshot.界面读到的输出参数.帧率, size: snapshot.界面读到的输出参数.像素, mode: snapshot.界面读到的输出参数.目标 };
+  let localSaved = true;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+  } catch (err) {
+    localSaved = false;
+    console.warn(`[chart_gif_maker] 写入 localStorage 失败：${err.message}`);
+  }
+
+  console.log('[chart_gif_maker] 已保存配置 / 当前读取到的配置：', snapshot);
+  console.log('[chart_gif_maker] 写入浏览器本地的偏好（下次打开自动套用）：', saved);
+
+  state.prefs = { ...saved };
+  alert(localSaved ? '保存成功' : '保存成功（浏览器禁止本地存储，本次仅在控制台输出）');
+  setStatus('配置已保存，并把读取到的配置输出到浏览器控制台（F12 → Console）', 'ok');
+}
+
+function restoreSavedConfig() {
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+  } catch {
+    saved = null;
+  }
+  if (!saved || typeof saved !== 'object') return;
+  state.prefs = {
+    fps: Number.isFinite(Number(saved.fps)) ? clampFps(saved.fps) : null,
+    size: Number.isFinite(Number(saved.size)) && Number(saved.size) >= 1 ? Math.round(Number(saved.size)) : null,
+    mode: saved.mode === 'height' ? 'height' : 'width',
+  };
+  state.mode = state.prefs.mode;
+  if (state.prefs.size) {
+    state.size = state.prefs.size;
+    el.size.value = String(state.size);
+  }
+  if (state.prefs.fps) state.fps = state.prefs.fps;
+  el.mode.value = state.mode;
+  syncFpsInput();
+}
+
+/** 帧率输入框的显示与提示文案 */
+function syncFpsInput() {
+  const cap = fpsCap();
+  state.fps = clampFps(state.fps);
+  el.fps.value = String(state.fps);
+  el.fpsHint.textContent = `1 ~ ${cap} fps（上限来自 config/gif.json，默认 ${cap}）；帧率越高，GIF 体积越大。`;
 }
 
 /* ---------- 取帧 ---------- */
@@ -767,6 +1056,8 @@ function setBusy(busy) {
   el.cancelBtn.hidden = !busy;
   el.progress.hidden = !busy;
   el.playBtn.disabled = busy;
+  // 生成过程中不要弹窗：alert 会卡住取帧用的播放
+  el.saveConfigBtn.disabled = busy;
   if (!busy) {
     el.progressBar.style.width = '0%';
     el.progressText.textContent = '';
@@ -781,6 +1072,12 @@ function setProgress(done, total, stage) {
 
 async function generate() {
   if (state.busy) return;
+  const inputNotices = mergeNotices(state.timeNotices, state.fpsNotices);
+  // 生成前重新读一遍界面上的输入：不依赖"上次读到"的状态，避免界面与状态不一致
+  readCropInputs();
+  readTimeInputs();
+  readSizeInput();
+  readFpsInput();
   const plan = computeOutput();
   if (!state.file || !plan || plan.tooShort) return;
   if (!plan.crop.w || !plan.crop.h) return;
@@ -839,11 +1136,20 @@ async function generate() {
     encoder.finish();
 
     const blob = new Blob([encoder.bytesView()], { type: 'image/gif' });
+    const notes = [];
+    if (plan.sizeClamped) notes.push('目标尺寸超过上限，已等比缩小');
+    if (plan.durationClamped) {
+      notes.push(`所选区间 ${f2(plan.requestedDuration)}s 超过时长上限 `
+        + `${state.config.maxDurationSeconds}s，只输出了前 ${f2(plan.duration)}s`);
+    }
+    notes.push(...mergeNotices(inputNotices, state.timeNotices, state.fpsNotices));
     showResult(blob, {
       ...plan,
+      notes,
       gifFrames: gifFrames.length,
       elapsedMs: Math.round(performance.now() - started),
     });
+    if (notes.length) console.log('[chart_gif_maker] 本次生成自动调整：', notes);
     setStatus(`生成完成，用时 ${((performance.now() - started) / 1000).toFixed(1)}s`, 'ok');
   } catch (err) {
     if (err instanceof Cancelled) setStatus('已取消生成', 'warn');
@@ -882,9 +1188,11 @@ async function init() {
   bindTransport();
   bindOutput();
   el.renderBtn.addEventListener('click', generate);
+  el.saveConfigBtn.addEventListener('click', saveConfig);
   el.cancelBtn.addEventListener('click', () => { state.cancel = true; });
   window.addEventListener('resize', resizeFrame);
   await loadConfig();
+  restoreSavedConfig();
   updatePlanPreview();
 }
 

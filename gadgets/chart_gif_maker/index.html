@@ -72,14 +72,14 @@
         <legend>2. 时间区间</legend>
         <div class="timerow">
           <span class="tag">起始</span>
-          <input type="number" id="startMin" min="0" step="1" inputmode="numeric"> 分
-          <input type="number" id="startSec" min="0" max="59" step="0.01" inputmode="decimal"> 秒
+          <input type="text" id="startMin" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="起始分钟"> 分
+          <input type="text" id="startSec" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="起始秒"> 秒
           <button type="button" class="ghost mini" id="startNowBtn">取当前</button>
         </div>
         <div class="timerow">
           <span class="tag">结束</span>
-          <input type="number" id="endMin" min="0" step="1" inputmode="numeric"> 分
-          <input type="number" id="endSec" min="0" max="59" step="0.01" inputmode="decimal"> 秒
+          <input type="text" id="endMin" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="结束分钟"> 分
+          <input type="text" id="endSec" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="结束秒"> 秒
           <button type="button" class="ghost mini" id="endNowBtn">取当前</button>
         </div>
         <label class="check"><input type="checkbox" id="loopSel"> 循环预览该区间</label>
@@ -96,10 +96,17 @@
           </label>
           <label class="inline"><input type="number" id="size" min="1" step="1" inputmode="numeric"> px</label>
         </div>
+        <div class="row">
+          <label class="inline">帧率
+            <input type="number" id="fps" min="1" step="1" inputmode="numeric" aria-describedby="fpsHint">
+          </label>
+          <span class="tip" id="fpsHint"></span>
+        </div>
         <p class="plan mono" id="planInfo"></p>
         <p class="tip" id="limitInfo"></p>
         <div class="row">
           <button type="button" id="renderBtn" class="primary" disabled>生成 GIF</button>
+          <button type="button" id="saveConfigBtn" class="ghost" title="保存当前设置，并把读取到的配置输出到浏览器控制台">保存配置</button>
           <button type="button" id="cancelBtn" class="ghost" hidden>取消</button>
         </div>
         <div class="progress" id="progress" hidden>
