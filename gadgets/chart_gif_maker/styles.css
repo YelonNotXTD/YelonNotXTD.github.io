@@ -32,11 +32,23 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  /* 预览 50% + 两个输入列：第一列 27% 放「裁剪区域 / 时间区间」——
+     宽一点，坐标框可以两个一行（X1 Y1 / X2 Y2）、起始和结束也各占一行；
+     第二列 18% 放「输出参数 / 按钮」。 */
+  grid-template-columns: 50% 27% 18%;
   gap: 16px;
   max-width: 1180px;
   margin: 0 auto;
   align-items: start;
+}
+
+/* 视口变窄时百分比会窄到没法用，改成固定宽度；再窄就整列堆叠 */
+@media (max-width: 1280px) {
+  .layout { grid-template-columns: minmax(0, 1fr) 320px 215px; }
+}
+
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: minmax(0, 1fr) 260px 200px; }
 }
 
 @media (max-width: 900px) {
@@ -154,16 +166,21 @@ fieldset {
 legend { padding: 0 6px; font-weight: 600; font-size: 13px; }
 .tip { margin: 0; color: var(--muted); font-size: 12px; }
 
-.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+/* 坐标框每行两个（X1 Y1 / X2 Y2） */
+.grid4 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .grid4 label, .inline { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
-.grid4 input, .timerow input, .inline input { min-width: 0; }
+.grid4 input, .timerow input { min-width: 0; }
 
 .timerow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
 .timerow .tag { color: var(--muted); font-size: 12px; }
-.timerow input { width: 68px; }
+.timerow input { width: 60px; }
 
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.actions { display: grid; gap: 8px; }
+.actions button { width: 100%; }
 .inline { display: flex; align-items: center; gap: 6px; color: var(--fg); }
+/* 窄栏里 flex 会把输入框压扁，所以固定住宽度、不要参与收缩 */
+.inline input, .inline select { flex: 0 0 auto; }
 .inline input { width: 84px; }
 
 input[type="number"], input[type="text"], select {

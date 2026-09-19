@@ -3,12 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>视频生成GIF小工具 v0.0</title>
-  <link rel="stylesheet" href="./styles.css">
+  <title>视频生成GIF小工具</title>
+  <!-- ?v= 是给浏览器 / CDN 的缓存标记：每次改完 app.js / styles.css（或改版本号）时一起改掉，
+       可以避免「网页还是旧版」的情况 -->
+  <link rel="stylesheet" href="./styles.css?v=0.4">
 </head>
 <body>
   <header class="topbar">
-    <h1 id="appTitle">视频生成GIF小工具 v0.0</h1>
+    <h1 id="appTitle">视频生成GIF小工具</h1>
     <p class="sub">
       上传视频，框选画面区域、指定起止时间，导出循环 GIF。
       <strong>全部在本机浏览器完成，视频不会上传到任何服务器。</strong>
@@ -85,6 +87,9 @@
         <label class="check"><input type="checkbox" id="loopSel"> 循环预览该区间</label>
       </fieldset>
 
+    </section>
+
+    <section class="panel controls">
       <fieldset>
         <legend>3. 输出</legend>
         <div class="row">
@@ -104,7 +109,7 @@
         </div>
         <p class="plan mono" id="planInfo"></p>
         <p class="tip" id="limitInfo"></p>
-        <div class="row">
+        <div class="actions">
           <button type="button" id="saveConfigBtn" class="ghost" title="保存当前设置，并把读取到的配置输出到浏览器控制台">保存配置</button>
           <button type="button" id="renderBtn" class="primary" disabled>生成 GIF</button>
           <button type="button" id="cancelBtn" class="ghost" hidden>取消</button>
@@ -126,6 +131,6 @@
     <a id="downloadLink" class="primary link" download="clip.gif">下载 GIF</a>
   </section>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=0.4"></script>
 </body>
 </html>

@@ -133,7 +133,8 @@ function setStatus(text, kind = '') {
 
 async function loadConfig() {
   try {
-    const res = await fetch(CONFIG_URL, { cache: 'no-cache' });
+    // 带上时间戳：否则浏览器 / CDN 可能继续用旧的 gif.json，改完刷新看不到效果
+    const res = await fetch(`${CONFIG_URL}?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.json();
     for (const key of Object.keys(DEFAULTS)) {
@@ -153,6 +154,8 @@ async function loadConfig() {
     console.warn(`[config] 读取 ${CONFIG_URL} 失败，使用内置默认值：${err.message}`);
   }
   applyTitle();
+  console.log(`[chart_gif_maker] 标题版本：v${state.config.version}`
+    + `（${state.configLoaded ? `来自 ${CONFIG_URL}` : '未能读取配置文件，使用内置默认值'}）`);
   el.limitInfo.textContent = state.configLoaded
     ? `上限（可在 config/gif.json 调整）：${state.config.maxWidth}×${state.config.maxHeight}px、`
       + `${state.config.maxDurationSeconds}s、${fpsCap()}fps；超出时自动等比缩小 / 截断时长。`
@@ -849,7 +852,8 @@ function syncFpsInput() {
   const cap = fpsCap();
   state.fps = clampFps(state.fps);
   el.fps.value = String(state.fps);
-  el.fpsHint.textContent = `1 ~ ${cap} fps（默认 ${Math.min(DEFAULT_FPS, cap)}，上限 ${cap} 来自 config/gif.json）；帧率越高，GIF 体积越大。`;
+  el.fpsHint.textContent = `1 ~ ${cap} fps（默认 ${Math.min(DEFAULT_FPS, cap)}）`;
+  el.fpsHint.title = `上限 ${cap}fps 来自 config/gif.json；帧率越高，GIF 体积越大。`;
 }
 
 /* ---------- 取帧 ---------- */
