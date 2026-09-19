@@ -14,6 +14,7 @@ const STORAGE_KEY = 'chart_gif_maker.prefs.v1';
 
 /** config/gif.json 读不到时使用的兜底值（与仓库里的默认配置一致） */
 const DEFAULTS = {
+  version: '0.0',
   fps: 12,
   maxWidth: 325,
   maxHeight: 325,
@@ -27,6 +28,14 @@ const DEFAULTS = {
 
 const MIN_DURATION = 0.04;
 const SEEK_TIMEOUT_MS = 4000;
+/** 输出参数的默认值（用户没设置过、也没有保存过的偏好时使用） */
+const DEFAULT_SIZE = 240;
+const DEFAULT_FPS = 6;
+/** 默认裁剪区域：画面中心的最大内切正方形 */
+/** 默认时间区间：从视频 40% 处开始，长度取「总长的 20%」与「30s」里较小的那个 */
+const DEFAULT_TIME_START_RATIO = 0.4;
+const DEFAULT_TIME_LENGTH_RATIO = 0.2;
+const DEFAULT_TIME_MAX_LENGTH = 30;
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -43,13 +52,14 @@ const el = {
   progress: $('progress'), progressBar: $('progressBar'), progressText: $('progressText'),
   resultPanel: $('resultPanel'), resultImg: $('resultImg'), resultInfo: $('resultInfo'),
   resultNotes: $('resultNotes'), downloadLink: $('downloadLink'),
+  appTitle: $('appTitle'),
 };
 
 const state = {
   config: { ...DEFAULTS },
   configLoaded: false,
   /** 用户手动设置的帧率（整数，1 ~ config.fps） */
-  fps: DEFAULTS.fps,
+  fps: DEFAULT_FPS,
   /** 输出偏好，可从 localStorage 恢复 / 由「保存配置」写入 */
   prefs: null,
   /** 用户本次是否手动改过这些输出参数（改过之后载入新视频不再覆盖） */
@@ -71,7 +81,7 @@ const state = {
   /** 帧率输入被自动修正的说明 */
   fpsNotices: [],
   mode: 'width',
-  size: 325,
+  size: DEFAULT_SIZE,
   busy: false,
   cancel: false,
   resultUrl: null,
@@ -132,12 +142,17 @@ async function loadConfig() {
         state.config[key] = Number(value);
       } else if (typeof DEFAULTS[key] === 'boolean' && typeof value === 'boolean') {
         state.config[key] = value;
+      } else if (typeof DEFAULTS[key] === 'string') {
+        // 字符串参数（例如 version）：空值 / 读不到时继续用兜底值
+        const text = typeof value === 'string' ? value.trim() : (Number.isFinite(Number(value)) ? String(value) : '');
+        if (text) state.config[key] = text;
       }
     }
     state.configLoaded = true;
   } catch (err) {
     console.warn(`[config] 读取 ${CONFIG_URL} 失败，使用内置默认值：${err.message}`);
   }
+  applyTitle();
   el.limitInfo.textContent = state.configLoaded
     ? `上限（可在 config/gif.json 调整）：${state.config.maxWidth}×${state.config.maxHeight}px、`
       + `${state.config.maxDurationSeconds}s、${fpsCap()}fps；超出时自动等比缩小 / 截断时长。`
@@ -145,8 +160,17 @@ async function loadConfig() {
       + `${DEFAULTS.maxDurationSeconds}s、${fpsCap()}fps。`;
   if (!state.configLoaded) setStatus('未能读取 config/gif.json（用 file:// 直接打开会这样，请通过网站地址访问）', 'warn');
   el.dzHint.textContent = `单个文件不超过 ${state.config.maxFileSizeMB}MB`;
-  state.fps = fpsCap();
+  state.fps = clampFps(DEFAULT_FPS);
+  state.size = Math.max(1, Math.min(DEFAULT_SIZE, Math.round(state.config.maxWidth)));
+  el.size.value = String(state.size);
   syncFpsInput();
+}
+
+/** 页面标题：视频生成GIF小工具 v<version>（version 来自 config，读不到时是 0.0） */
+function applyTitle() {
+  const title = `视频生成GIF小工具 v${state.config.version}`;
+  el.appTitle.textContent = title;
+  document.title = title;
 }
 
 /* ---------- 文件与预览 ---------- */
@@ -202,6 +226,31 @@ function openFile(file) {
   setStatus('正在读取视频信息…', 'busy');
 }
 
+/**
+ * 默认裁剪区域：画面中心的最大内切正方形。
+ * 例：1920×1080 → 420,0 ~ 1500,1080；320×240 → 40,0 ~ 280,240。
+ */
+function defaultCrop(width, height) {
+  const side = Math.max(1, Math.min(width, height));
+  const x = Math.round((width - side) / 2);
+  const y = Math.round((height - side) / 2);
+  return { x, y, w: side, h: side };
+}
+
+/**
+ * 默认时间区间：从视频 40% 处开始，长度取「总长的 20%」与「30s」里较小的那个。
+ * 例：60s → 24.00 ~ 36.00s；300s → 120.00 ~ 150.00s；10s → 4.00 ~ 6.00s。
+ */
+function defaultTimeRange(duration) {
+  const length = clamp(
+    Math.min(duration * DEFAULT_TIME_LENGTH_RATIO, DEFAULT_TIME_MAX_LENGTH),
+    MIN_DURATION,
+    Math.max(MIN_DURATION, duration),
+  );
+  const start = clamp(duration * DEFAULT_TIME_START_RATIO, 0, Math.max(0, duration - length));
+  return { start, end: start + length, length };
+}
+
 function onMetadata() {
   const video = el.video;
   state.videoWidth = video.videoWidth;
@@ -217,16 +266,17 @@ function onMetadata() {
   el.scrub.max = String(state.duration);
   resizeFrame();
 
-  // 默认：整幅画面 + 视频开头 + 上限内的目标宽度
+  // 默认：画面中心的最大内切正方形 + 视频 40% 处起、20%（最多 30s）长度 + 默认目标宽度
   //（帧率 / 尺寸 / 目标若保存过就沿用保存值；用户已经手动改过的则保留用户的设置）
-  state.sel = { x: 0, y: 0, w: state.videoWidth, h: state.videoHeight };
-  state.start = 0;
-  state.end = Math.min(state.duration, cfg.maxDurationSeconds);
+  state.sel = defaultCrop(state.videoWidth, state.videoHeight);
+  const range = defaultTimeRange(state.duration);
+  state.start = range.start;
+  state.end = range.end;
   if (!state.userEdited.mode) state.mode = state.prefs?.mode ?? state.mode;
   if (!state.userEdited.size) {
-    state.size = state.prefs?.size ?? Math.max(1, Math.min(Math.round(cfg.maxWidth), state.videoWidth));
+    state.size = state.prefs?.size ?? Math.max(1, Math.min(DEFAULT_SIZE, Math.round(cfg.maxWidth)));
   }
-  if (!state.userEdited.fps) state.fps = clampFps(state.prefs?.fps ?? cfg.fps);
+  if (!state.userEdited.fps) state.fps = clampFps(state.prefs?.fps ?? DEFAULT_FPS);
   el.size.value = String(state.size);
   el.mode.value = state.mode;
   syncFpsInput();
@@ -236,7 +286,8 @@ function onMetadata() {
   syncTransport();
   renderMeta();
   updatePlanPreview();
-  setStatus('已载入视频，可在画面上拖拽框选区域', 'ok');
+  setStatus(`已载入视频：默认裁剪画面中心 ${state.sel.w}×${state.sel.h} 的正方形，`
+    + `时间 ${f2(state.start)}s ~ ${f2(state.end)}s；可直接在画面上拖拽调整`, 'ok');
 }
 
 function renderMeta() {
@@ -798,7 +849,7 @@ function syncFpsInput() {
   const cap = fpsCap();
   state.fps = clampFps(state.fps);
   el.fps.value = String(state.fps);
-  el.fpsHint.textContent = `1 ~ ${cap} fps（上限来自 config/gif.json，默认 ${cap}）；帧率越高，GIF 体积越大。`;
+  el.fpsHint.textContent = `1 ~ ${cap} fps（默认 ${Math.min(DEFAULT_FPS, cap)}，上限 ${cap} 来自 config/gif.json）；帧率越高，GIF 体积越大。`;
 }
 
 /* ---------- 取帧 ---------- */

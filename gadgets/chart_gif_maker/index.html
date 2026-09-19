@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>视频区间 → GIF</title>
+  <title>视频生成GIF小工具 v0.0</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>视频区间 → GIF</h1>
+    <h1 id="appTitle">视频生成GIF小工具 v0.0</h1>
     <p class="sub">
       上传视频，框选画面区域、指定起止时间，导出循环 GIF。
       <strong>全部在本机浏览器完成，视频不会上传到任何服务器。</strong>
@@ -94,7 +94,7 @@
               <option value="height">高度</option>
             </select>
           </label>
-          <label class="inline"><input type="number" id="size" min="1" step="1" inputmode="numeric"> px</label>
+          <label class="inline"><input type="number" id="size" min="1" step="1" inputmode="numeric" value="240"> px</label>
         </div>
         <div class="row">
           <label class="inline">帧率
@@ -105,8 +105,8 @@
         <p class="plan mono" id="planInfo"></p>
         <p class="tip" id="limitInfo"></p>
         <div class="row">
-          <button type="button" id="renderBtn" class="primary" disabled>生成 GIF</button>
           <button type="button" id="saveConfigBtn" class="ghost" title="保存当前设置，并把读取到的配置输出到浏览器控制台">保存配置</button>
+          <button type="button" id="renderBtn" class="primary" disabled>生成 GIF</button>
           <button type="button" id="cancelBtn" class="ghost" hidden>取消</button>
         </div>
         <div class="progress" id="progress" hidden>
